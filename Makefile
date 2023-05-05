@@ -1,18 +1,42 @@
 PACKAGE_NAME := frank
 SHELL := /bin/bash
-CHANGES := $(shell git status -s -- src/$(PACKAGE_NAME) | wc -l)
 INVENV := $(if $(VIRTUAL_ENV),1,0)
 PYTHONINT := $(shell which python3)
 WORKON_HOME := ~/.virtualenv
 VENV_WRAPPER := /usr/share/virtualenvwrapper/virtualenvwrapper.sh
 LATEST_VERSION := $(shell git tag | grep -E "^v[[:digit:]]+.[[:digit:]]+.[[:digit:]]+$$" | sort -n | tail -n 1)
+BRANCH := $(shell git branch --show-current)
+DRY_RUN_PARAM := $(if $(DRY_RUN),--dry-run,)
+TAG_PREFIX := $(PACKAGE_NAME)-v
+CHANGES := $(strip $(shell git status -s -- src/$(PACKAGE_NAME) | wc -l))
 HEAD_VERSION_TAG := $(shell git tag --contains | head -n 1 | grep -E "^v[[:digit:]]+.[[:digit:]]+.[[:digit:]]+$$")
 HEAD_TAGGED := $(if $(HEAD_VERSION_TAG),1,0)
-BRANCH := $(shell git branch --show-current)
+
+define version 
+	pushd $(1) \
+		&& standard-version \
+			$(DRY_RUN_PARAM) \
+			--preMajor true \
+			--releaseCommitMessageFormat="release($(2)) {{currentTag}}" \
+			-a \
+			--path ./ \
+			--header "# $(2) Changelog" \
+			--tag-prefix $(TAG_PREFIX)
+endef 
+
+venv-reset:
+	. $(VENV_WRAPPER) \
+		&& rmvirtualenv $(PACKAGE_NAME)
+
+dev-reset: venv-reset
 
 venv:	
-	@. $(VENV_WRAPPER) && (workon $(PACKAGE_NAME) 2>/dev/null || mkvirtualenv -a . -p $(PYTHONINT) $(PACKAGE_NAME))	
-	@pip install --extra-index-url https://test.pypi.org/simple -t $(WORKON_HOME)/$(PACKAGE_NAME)/lib/python3.9/site-packages -r requirements.txt 
+	. $(VENV_WRAPPER) \
+		&& (workon $(PACKAGE_NAME) 2>/dev/null || mkvirtualenv -a . -p $(PYTHONINT) $(PACKAGE_NAME)) \
+		&& pip install \
+			--extra-index-url https://test.pypi.org/simple \
+			-t $(WORKON_HOME)/$(PACKAGE_NAME)/lib/python3.9/site-packages \
+			-r requirements.txt
 
 test:
 	@cd tests && $(PYTHONINT) test.py
@@ -21,41 +45,29 @@ test:
 build-deps:
 	@$(PYTHONINT) -m pip install --upgrade pip build twine 
 
+version: NEXT_VERSION := $(shell standard-version --dry-run -a --path ./src/frank --tag-prefix $(TAG_PREFIX)  | grep "tagging release" | awk '{ print $$4 }')
 version:
 ifeq ($(BRANCH), main)
 ifeq ($(CHANGES), 0)
-ifeq ($(INVENV), 0)
 ifeq ($(HEAD_TAGGED), 0)
-	@echo "Versioning (DRY_RUN=$(DRY_RUN))"
+	@echo "Versioning $* (DRY_RUN=$(DRY_RUN))"
 ifneq ($(DRY_RUN), 1)
-	sed -i \
-		"s/^version = .*/version = \"$(shell standard-version --dry-run | grep "tagging release" | awk '{ print $$4 }')\"/" \
-		pyproject.toml
-	git diff -- pyproject.toml
-	git add pyproject.toml
-	standard-version -a	
-else 
-	@echo ""
-	@echo "_---- D R Y  R U N ----_"
-	@echo ""
-	grep -i version pyproject.toml 
-	standard-version -a	--dry-run 
-endif 
-else 
+	sed -i "s/^version = .*/version = \"$(NEXT_VERSION)\"/" pyproject.toml \
+		&& git diff -- pyproject.toml \
+		&& git add pyproject.toml
+endif		
+	$(call version,src/frank,$(PACKAGE_NAME))
+else # head tagged 
 	@echo "No versioning today (commit already tagged $(HEAD_VERSION_TAG))"	
-endif 
-else 
-	@echo "No versioning today (in virtual env $(VIRTUAL_ENV))"
+endif # head not tagged 
+else # changes 
+	@echo "No versioning today (%=$* BRANCH=$(BRANCH) CHANGES=$(CHANGES) HEAD_VERSION_TAG=$(HEAD_VERSION_TAG) HEAD_TAGGED=$(HEAD_TAGGED) DRY_RUN_PARAM=$(DRY_RUN_PARAM)). Stash or commit your changes."
 	exit 1
-endif
-else
-	@echo "No versioning today ($(CHANGES) changes). Stash or commit your changes."
-	exit 1
-endif
-else 
+endif # no changes 
+else # not on main 
 	@echo "Will not version outside main"
 	exit 1
-endif 
+endif # on main 
 
 .PHONY: build 
 
