@@ -1,3 +1,24 @@
+[metadata]
+name = frank
+version = 0.0.2
+author = Tim Palko
+author_email = tim@palkosoftware.com
+description = Database, dates and times
+long_description = file: README.md
+long_description_content_type = text/markdown
+url = https://github.com/tpalko/photo-binner
+classifiers =
+    Programming Language :: Python :: 3
+    License :: OSI Approved :: GNUv3 License
+    Operating System :: OS Independent
+
+[options]
+python_requires = >=3.9
+data_files = [('frank', ['src/frank/.cowpyrc'])]
+
+[options.packages.find]
+where = src
+
 [build-system]
 requires = [
     "setuptools>=42",
