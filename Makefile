@@ -48,7 +48,7 @@ ifeq ($(HEAD_TAGGED), 0)
 ifneq ($(DRY_RUN), 1)
 	sed -i "s/^version = .*/version = \"$(NEXT_VERSION)\"/" pyproject.toml \
 		&& printf "[metadata]\nversion = $(NEXT_VERSION)\n" > setup.cfg \
-		&& git diff -- pyproject.toml setup.cfg \
+		&& git diff \
 		&& git add pyproject.toml setup.cfg
 endif		
 	pushd src/frank \
