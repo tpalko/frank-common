@@ -1,23 +1,23 @@
 [metadata]
-name = frank
+name = "frank"
 version = "v0.0.3"
-author = Tim Palko
-author_email = tim@palkosoftware.com
-description = Database, dates and times
-long_description = file: README.md
-long_description_content_type = text/markdown
-url = https://github.com/tpalko/photo-binner
-classifiers =
-    Programming Language :: Python :: 3
-    License :: OSI Approved :: GNUv3 License
-    Operating System :: OS Independent
+author = "Tim Palko"
+author_email = "tim@palkosoftware.com"
+description = "Database, dates and times"
+readme = "README.md"
+url = "https://github.com/tpalko/photo-binner"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: GNUv3 License",
+    "Operating System :: OS Independent"
+]
+requires-python = ">=3.9"
 
 [options]
-python_requires = >=3.9
-data_files = [('frank', ['src/frank/.cowpyrc'])]
+python_requires = ">=3.9"
 
 [options.packages.find]
-where = src
+where = "src/frank"
 
 [build-system]
 requires = [
