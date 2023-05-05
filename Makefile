@@ -7,21 +7,15 @@ VENV_WRAPPER := /usr/share/virtualenvwrapper/virtualenvwrapper.sh
 LATEST_VERSION := $(shell git tag | grep -E "^v[[:digit:]]+.[[:digit:]]+.[[:digit:]]+$$" | sort -n | tail -n 1)
 BRANCH := $(shell git branch --show-current)
 DRY_RUN_PARAM := $(if $(DRY_RUN),--dry-run,)
-TAG_PREFIX := $(PACKAGE_NAME)-v
+TAG_PREFIX := v
 CHANGES := $(strip $(shell git status -s -- src/$(PACKAGE_NAME) | wc -l))
 HEAD_VERSION_TAG := $(shell git tag --contains | head -n 1 | grep -E "^v[[:digit:]]+.[[:digit:]]+.[[:digit:]]+$$")
 HEAD_TAGGED := $(if $(HEAD_VERSION_TAG),1,0)
+STD_VER_PARAMS := --preMajor true -a --path ./src/frank --tag-prefix $(TAG_PREFIX)
+STD_VER_WET_PARAMS := --releaseCommitMessageFormat="release {{currentTag}}" --header "\# Changelog"
 
-define version 
-	pushd $(1) \
-		&& standard-version \
-			$(DRY_RUN_PARAM) \
-			--preMajor true \
-			--releaseCommitMessageFormat="release($(2)) {{currentTag}}" \
-			-a \
-			--path ./ \
-			--header "# $(2) Changelog" \
-			--tag-prefix $(TAG_PREFIX)
+define version
+	standard-version $(DRY_RUN_PARAM) $(STD_VER_PARAMS) $(STD_VER_WET_PARAMS)
 endef 
 
 venv-reset:
@@ -45,7 +39,7 @@ test:
 build-deps:
 	@$(PYTHONINT) -m pip install --upgrade pip build twine 
 
-version: NEXT_VERSION := $(shell standard-version --dry-run -a --path ./src/frank --tag-prefix $(TAG_PREFIX)  | grep "tagging release" | awk '{ print $$4 }')
+version: NEXT_VERSION := $(shell standard-version --dry-run $(STD_VER_PARAMS) | grep "tagging release" | awk '{ print $$4 }')
 version:
 ifeq ($(BRANCH), main)
 ifeq ($(CHANGES), 0)
@@ -56,7 +50,8 @@ ifneq ($(DRY_RUN), 1)
 		&& git diff -- pyproject.toml \
 		&& git add pyproject.toml
 endif		
-	$(call version,src/frank,$(PACKAGE_NAME))
+	pushd src/frank \
+		&& $(call version)
 else # head tagged 
 	@echo "No versioning today (commit already tagged $(HEAD_VERSION_TAG))"	
 endif # head not tagged 
