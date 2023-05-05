@@ -47,9 +47,9 @@ ifeq ($(HEAD_TAGGED), 0)
 	@echo "Versioning $* (DRY_RUN=$(DRY_RUN))"
 ifneq ($(DRY_RUN), 1)
 	sed -i "s/^version = .*/version = \"$(NEXT_VERSION)\"/" pyproject.toml \
-		&& git diff -- pyproject.toml \
-		&& git add pyproject.toml
-	printf "[metadata]\nversion = $(NEXT_VERSION)\n" > setup.cfg 
+		&& printf "[metadata]\nversion = $(NEXT_VERSION)\n" > setup.cfg \
+		&& git diff -- pyproject.toml setup.cfg \
+		&& git add pyproject.toml setup.cfg
 endif		
 	pushd src/frank \
 		&& $(call version)
