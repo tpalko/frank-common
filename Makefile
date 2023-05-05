@@ -4,14 +4,17 @@ INVENV := $(if $(VIRTUAL_ENV),1,0)
 PYTHONINT := $(shell which python3)
 WORKON_HOME := ~/.virtualenv
 VENV_WRAPPER := /usr/share/virtualenvwrapper/virtualenvwrapper.sh
-LATEST_VERSION := $(shell git tag | grep -E "^v[[:digit:]]+.[[:digit:]]+.[[:digit:]]+$$" | sort -n | tail -n 1)
+#LATEST_VERSION := $(shell git tag | grep -E "^v[[:digit:]]+.[[:digit:]]+.[[:digit:]]+$$" | sort -n | tail -n 1)
+
 BRANCH := $(shell git branch --show-current)
-DRY_RUN_PARAM := $(if $(DRY_RUN),--dry-run,)
-TAG_PREFIX := v
 CHANGES := $(strip $(shell git status -s -- src/$(PACKAGE_NAME) | wc -l))
 HEAD_VERSION_TAG := $(shell git tag --contains | head -n 1 | grep -E "^v[[:digit:]]+.[[:digit:]]+.[[:digit:]]+$$")
 HEAD_TAGGED := $(if $(HEAD_VERSION_TAG),1,0)
-STD_VER_PARAMS := --preMajor true -a --path ./src/frank --tag-prefix $(TAG_PREFIX)
+
+DRY_RUN_PARAM := $(if $(DRY_RUN),--dry-run,)
+TAG_PREFIX := v
+PREMAJOR := false 
+STD_VER_PARAMS := --preMajor $(PREMAJOR) -a --path ./src/frank --tag-prefix $(TAG_PREFIX)
 STD_VER_WET_PARAMS := --releaseCommitMessageFormat="release {{currentTag}}" --header "\# Changelog"
 
 define version
