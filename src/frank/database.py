@@ -56,7 +56,12 @@ class Database(object):
         
         if 'tables' in kwargs:
             self.tables = kwargs['tables']
-        
+
+            self.insert_cols = { m: [ c['name'] for c in self.tables['models'][m] ] for m in self.tables['models'].keys() }
+
+            for m in self.insert_cols.keys():
+                self.insert_cols[m].extend([ t for t in self.tables['base']['timestamps'] ])
+
         with self.cursor() as cur:
             for tablename in self.tables['models'].keys():
                 try:
