@@ -1,17 +1,15 @@
 {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'handlers': {
-        'console': {
-            'class': 'logging.StreamHandler',
-            'level': 'DEBUG'
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "level": "DEBUG",
+            "format": "Format.DETAILED"
         }
     },
-    'loggers': {    
-        'frank': {
-            'handlers': ['console'],
-            'level': 'INFO',
-            'propagate': False,
+    "loggers": {    
+        "database": {
+            "handlers": ["console"],
+            "level": "WARNING"
         }
     }
 }

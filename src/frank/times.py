@@ -36,8 +36,14 @@ time_units = [
 
 def since_humanize(date_obj):
 
+    now = UTC.localize(datetime.utcnow())
+
+    if not date_obj.tzinfo or str(date_obj.tzinfo) != str(UTC.zone):
+        print(date_obj.tzinfo)
+        date_obj = UTC.localize(date_obj)
+
     ret = ''
-    seconds_since = (datetime.utcnow() - date_obj).total_seconds()
+    seconds_since = (now - date_obj).total_seconds()
     parts = 0
     MAX_PARTS = 1
 
@@ -67,16 +73,35 @@ def ordinal(num):
         return "st"
     else:
         return "th"
-    
+
 def date_humanize(date_obj):
-    tzDate = UTC.localize(date_obj).astimezone(HERE)
+    '''UTC Date() -> local Sun Jun 4th'''
+    tzDate = localize_utc_date(date_obj)
     return f'{datetime.strftime(tzDate, "%a %b")} {int(datetime.strftime(tzDate, "%d"))}{ordinal(datetime.strftime(tzDate, "%d"))}'
 
 def time_fmt(date_obj):
-    return f'{int(datetime.strftime(UTC.localize(date_obj).astimezone(HERE), "%I"))}{datetime.strftime(UTC.localize(date_obj).astimezone(HERE), ":%M %P")}'
+    '''UTC Date() -> local 12:24 pm'''
+    return f'{int(datetime.strftime(localize_utc_date(date_obj), "%I"))}{datetime.strftime(localize_utc_date(date_obj), ":%M %P")}'
 
-def utcify(date_str):
-    return HERE.localize(datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%S.000Z")).astimezone(UTC)        
+def parse_datestring_as_utc(date_str):
+    return datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%S.000Z")
 
+def truncate_date(date_obj, truncate_to):
+    if truncate_to == "day":
+        return datetime.strptime(datetime.strftime(date_obj, "%Y-%m-%d"), "%Y-%m-%d")    
+    raise NotImplementedError(f'truncate_date not implemented for {truncate_to}')
+
+def utcify(naive_local_date_obj):
+    '''local 2023-06-04T11:38:42.000Z -> UTC Date()'''
+    return HERE.localize(naive_local_date_obj).astimezone(UTC)        
+
+def localize_utc_date(utc_date):
+    '''UTC Date() -> local Date()'''
+    if not utc_date.tzinfo or str(utc_date.tzinfo) != str(UTC.zone):
+        utc_date = UTC.localize(utc_date)
+    return utc_date.astimezone(HERE)
+
+# -- serializing datetime columns
 def date_loc_and_fmt(date_obj):
-    return datetime.strftime(UTC.localize(date_obj).astimezone(HERE), "%Y-%m-%d %I:%M %P")
+    '''UTC Date() -> local 2023-06-04 09:24 am'''
+    return datetime.strftime(localize_utc_date(date_obj), "%Y-%m-%d %I:%M %P")

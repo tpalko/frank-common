@@ -35,9 +35,13 @@ venv:
 			-t $(WORKON_HOME)/$(PACKAGE_NAME)/lib/python3.9/site-packages \
 			-r requirements.txt
 
+vendor-install:
+	ln -svf $(PWD)/../../github.com/cowpy/src/cowpy $(WORKON_HOME)/$(PACKAGE_NAME)/lib/python3.9/site-packages/
+
+dev-setup: venv vendor-install
+
 test:
-	@cd tests && $(PYTHONINT) test.py
-	@find tests -name "__pycache__" -type d | xargs rm -vrf
+	@echo "not implemented"
 
 build-deps:
 	@$(PYTHONINT) -m pip install --upgrade pip build twine 
