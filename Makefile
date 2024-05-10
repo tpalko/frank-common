@@ -1,6 +1,7 @@
 PACKAGE_NAME := frank
 SHELL := /bin/bash
 INVENV := $(if $(VIRTUAL_ENV),1,0)
+PYTHON_VERSION := 3.11
 PYTHONINT := $(shell which python3)
 WORKON_HOME := ~/.virtualenv
 VENV_WRAPPER := /usr/share/virtualenvwrapper/virtualenvwrapper.sh
@@ -21,8 +22,13 @@ define version
 	standard-version $(DRY_RUN_PARAM) $(STD_VER_PARAMS) $(STD_VER_WET_PARAMS)
 endef 
 
-venv-reset:
+venv-reset:		
+ifeq ($(VIRTUAL_ENV), $(WORKON_HOME)/$(PACKAGE_NAME))
 	. $(VENV_WRAPPER) \
+		&& deactivate
+endif 
+	. $(VENV_WRAPPER) \
+		&& deactivate \
 		&& rmvirtualenv $(PACKAGE_NAME)
 
 dev-reset: venv-reset
@@ -32,11 +38,17 @@ venv:
 		&& (workon $(PACKAGE_NAME) 2>/dev/null || mkvirtualenv -a . -p $(PYTHONINT) $(PACKAGE_NAME)) \
 		&& pip install \
 			--extra-index-url https://test.pypi.org/simple \
-			-t $(WORKON_HOME)/$(PACKAGE_NAME)/lib/python3.9/site-packages \
+			-t $(WORKON_HOME)/$(PACKAGE_NAME)/lib/python$(PYTHON_VERSION)/site-packages \
 			-r requirements.txt
 
 vendor-install:
-	ln -svf $(PWD)/../../github.com/cowpy/src/cowpy $(WORKON_HOME)/$(PACKAGE_NAME)/lib/python3.9/site-packages/
+	. $(VENV_WRAPPER) \
+		&& (workon $(PACKAGE_NAME) 2>/dev/null || mkvirtualenv -a . -p $(PYTHONINT) $(PACKAGE_NAME)) \
+		&& pip install -e \
+			-t $(WORKON_HOME)/$(PACKAGE_NAME)/lib/python$(PYTHON_VERSION)/site-packages \
+			$(PWD)/../../github.com/cowpy
+
+#ln -svf $(PWD)/../../github.com/cowpy/src/cowpy $(WORKON_HOME)/$(PACKAGE_NAME)/lib/python$(PYTHON_VERSION)/site-packages/
 
 dev-setup: venv vendor-install
 

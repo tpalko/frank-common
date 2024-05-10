@@ -1,2 +1,4 @@
-mariadb===1.1.4
-pytz
+mariadb==1.1.10
+packaging==24.0
+pytz==2024.1
+simplejson==3.19.2

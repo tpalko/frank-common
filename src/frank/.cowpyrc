@@ -6,10 +6,5 @@
             "format": "Format.DETAILED"
         }
     },
-    "loggers": {    
-        "database": {
-            "handlers": ["console"],
-            "level": "WARNING"
-        }
-    }
+    "loggers": {}
 }

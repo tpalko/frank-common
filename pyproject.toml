@@ -1,17 +1,23 @@
-[metadata]
+[project]
 name = "frank"
 version = "v0.0.11"
-author = "Tim Palko"
-author_email = "tim@palkosoftware.com"
+authors = [
+  { name="Tim Palko", email="tim@palkosoftware.com" },
+]
 description = "Database, dates and times"
 readme = "README.md"
-url = "https://github.com/tpalko/photo-binner"
+license = { file="LICENSE" }
+requires-python = ">=3.9"
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: GNUv3 License",
+    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent"
 ]
-requires-python = ">=3.9"
+
+dependencies = ['mariadb', 'pytz', 'packaging', 'simplejson']
+
+[project.urls]
+"Homepage" = "https://github.com/tpalko/frank-common"
 
 [options]
 python_requires = ">=3.9"
@@ -20,8 +26,17 @@ python_requires = ">=3.9"
 where = "src/frank"
 
 [build-system]
-requires = [
-    "setuptools>=42",
-    "wheel"
-]
+requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
+
+[tool.flit.sdist]
+include = ["src/frank/.cowpyrc"]
+
+[tool.setuptools]
+include-package-data = true 
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+frank = [".cowpyrc"]
