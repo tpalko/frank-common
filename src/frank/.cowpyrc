@@ -6,5 +6,9 @@
             "format": "Format.DETAILED"
         }
     },
+    "root": {
+        "handlers": ["console"],
+        "level": "DEBUG",
+    },
     "loggers": {}
 }
