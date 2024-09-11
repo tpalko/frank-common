@@ -262,17 +262,17 @@ class Database(object):
     def _table_alias(self, table):
         return f'{table} {table[0]}'
     
-    def _table_join(self, t1, table):
+    def _table_join(self, join_table, home_table):
 
-        if 'foreign_keys' not in self.tables:
-            raise ValueError(f'cannot render join syntax between {t1} and {table} - table configuration does not include any foreign keys')
+        print(join_table)
+        print(home_table)
         
-        if table in self.tables['foreign_keys'] and t1 in self.tables['foreign_keys'][table]:
-            return f'inner join {self._table_alias(t1)} on {t1[0]}.{self.tables["foreign_keys"][table][t1]} = {table[0]}.{t1[0:-1]}_{self.tables["foreign_keys"][table][t1]}'
-        elif t1 in self.tables['foreign_keys'] and table in self.tables['foreign_keys'][t1]:
-            return f'inner join {self._table_alias(t1)} on {t1[0]}.{table[0:-1]}_{self.tables["foreign_keys"][table][t1]} = {table[0]}.{self.tables["foreign_keys"][table][t1]}'
+        if home_table in self.tables['foreign_keys'] and join_table in self.tables['foreign_keys'][home_table]:
+            return f'inner join {self._table_alias(join_table)} on {join_table[0]}.{self.tables["foreign_keys"][home_table][join_table]} = {home_table[0]}.{join_table[0:-1]}_{self.tables["foreign_keys"][home_table][join_table]}'
+        elif join_table in self.tables['foreign_keys'] and home_table in self.tables['foreign_keys'][join_table]:
+            return f'inner join {self._table_alias(join_table)} on {join_table[0]}.{home_table[0:-1]}_{self.tables["foreign_keys"][home_table][join_table]} = {home_table[0]}.{self.tables["foreign_keys"][home_table][join_table]}'
         else:
-            raise ValueError(f'cannot render join syntax between {t1} and {table} - foreign key configuration does not associate the two')
+            raise ValueError(f'cannot render join syntax between {join_table} and {home_table} - foreign key configuration does not associate the two')
     
     def _parse_param_to_stmt(self, param):
         op = "="
@@ -319,7 +319,8 @@ class Database(object):
     def _select(self, table, cols=None, joins=[], join_cols=False, where={}, order_by=None):
 
         if not cols:
-            cols = self.models_by_table_name[table]._meta.select_cols
+            cols = table._meta.select_cols
+            # cols = self.models_by_table_name[table]._meta.select_cols
 
         if join_cols:
             for j in joins:
@@ -333,13 +334,13 @@ class Database(object):
             where_stmt = ''
             if len(where.keys()) > 0:
                 where_stmt = 'where ' + ' and '.join([ self._parse_param_to_stmt(w) for w in where.keys() ])
-                params = tuple([ where[w] for w in where ])
-            query = f'select {",".join(cols)} from {self._table_alias(table)} {" ".join([ self._table_join(j, table) for j in joins ])} {where_stmt} '
+                params = tuple([ str(where[w]) for w in where ])
+            query = f'select {",".join(cols)} from {table._meta.alias} {" ".join([ self._table_join(join, table) for join in joins ])} {where_stmt} '
             if order_by:
                 query = f'{query} order by {order_by}'
 
             with self.cursor() as cur:
-                logger.debug(f'query: {query} params: {params}')
+                logger.debug(f'query: {query} params: {params}, types: {",".join([ type(p).__name__ for p in params ])}')
                 cur.execute(query, params)
                 all_records = cur.fetchall()
                 if self.cfg.dbType == DbType.MariaDB:                    
@@ -365,7 +366,7 @@ class Database(object):
 
         try:
             logger.debug(f'updating {table} {set} {where}')
-            query = f'update {table} \
+            query = f'update {table._meta.alias} \
                 set {",".join([ k + " = ? " for k in set.keys() ])} \
                 where {" AND ".join([ k + " = ? " if where[k] else k + " is null " for k in where.keys() ])};'
             where = { k: where[k] for k in where.keys() if where[k] }

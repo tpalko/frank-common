@@ -52,8 +52,17 @@ vendor-install:
 
 dev-setup: venv vendor-install
 
+test-setup:
+	. $(VENV_WRAPPER) \
+		&& (workon $(PACKAGE_NAME)-test 2>/dev/null || mkvirtualenv -a ./test -p $(PYTHONINT) $(PACKAGE_NAME)-test) \
+		&& pip install \
+			-t $(WORKON_HOME)/$(PACKAGE_NAME)-test/lib/python$(PYTHON_VERSION)/site-packages \
+			-r requirements.txt \
+		&& pip install -e . -t $(WORKON_HOME)/$(PACKAGE_NAME)-test/lib/python$(PYTHON_VERSION)/site-packages \
+
+.PHONY: test 
 test:
-	@echo "not implemented"
+	python test/run.py
 
 build-deps:
 	@$(PYTHONINT) -m pip install --upgrade pip build twine 
