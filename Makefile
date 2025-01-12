@@ -18,18 +18,23 @@ PREMAJOR := false
 STD_VER_PARAMS := --preMajor $(PREMAJOR) -a --path ./src/frank --tag-prefix $(TAG_PREFIX)
 STD_VER_WET_PARAMS := --releaseCommitMessageFormat="release {{currentTag}}" --header "\# Changelog"
 
+ENV ?= test
+
+include env/${ENV}.env 
+export $(shell sed 's/=.*//' env/${ENV}.env)
+
+dbshell = mariadb -u ${DB_USER} -h ${DB_HOST} ${DB_DATABASE} -p${DB_PASSWORD}
+
 define version
 	standard-version $(DRY_RUN_PARAM) $(STD_VER_PARAMS) $(STD_VER_WET_PARAMS)
 endef 
 
-venv-reset:		
-ifeq ($(VIRTUAL_ENV), $(WORKON_HOME)/$(PACKAGE_NAME))
+sql:
+	$(call dbshell)
+
+venv-reset:
 	. $(VENV_WRAPPER) \
-		&& deactivate
-endif 
-	. $(VENV_WRAPPER) \
-		&& deactivate \
-		&& rmvirtualenv $(PACKAGE_NAME)
+		&& (deactivate || rmvirtualenv $(PACKAGE_NAME))
 
 dev-reset: venv-reset
 
@@ -62,7 +67,9 @@ test-setup:
 
 .PHONY: test 
 test:
-	python test/run.py
+	@. $(VENV_WRAPPER) \
+		&& workon $(PACKAGE_NAME)-test \
+		&& FRANKDB_MODELS=models python -m unittest -v run
 
 build-deps:
 	@$(PYTHONINT) -m pip install --upgrade pip build twine 

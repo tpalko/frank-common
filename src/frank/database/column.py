@@ -2,6 +2,7 @@ import cowpy
 import simplejson as json 
 from pytz import timezone 
 from datetime import datetime 
+from frank.database.dialect import text 
 
 logger = cowpy.getLogger()
 
@@ -34,22 +35,25 @@ class Column(object):
         self.val[key] = val 
 
 class JsonColumn(Column):
-    col_type = 'json'
+    col_type = json
+
+class TextColumn(Column):
+    col_type = text 
 
 class StringColumn(Column):
-    col_type = 'string'
-
+    col_type = str
+    
 class IntColumn(Column):
-    col_type = 'int'
+    col_type = int
 
 class BoolColumn(Column):
-    col_type = 'bool'
+    col_type = bool
 
 class FloatColumn(Column):
-    col_type = 'float'
+    col_type = float
 
 class DateTimeColumn(Column):
-    col_type = 'datetime'
+    col_type = datetime.date
     mark = None 
 
     def __init__(self, *args, **kwargs):
@@ -58,7 +62,6 @@ class DateTimeColumn(Column):
             self.mark = kwargs['mark']
 
     def timestamp(self, operation):
-        logger.debug(f'getting timestamp for DateTimeColumn: self.val={self.val}, operation={operation}, self.mark={self.mark}')
         if self.val is None:
             if (operation == "insert" and self.mark == 'create') or (operation in ["insert", "update"] and self.mark == 'update'):
                 return datetime.now(timezone('UTC'))

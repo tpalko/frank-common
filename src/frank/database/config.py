@@ -1,10 +1,10 @@
 import os 
+import cowpy
 import simplejson as json
 from enum import Enum
+from frank.database.dialect import DbType
 
-class DbType(Enum):
-    MariaDB = 0
-    Sqlite = 1
+logger = cowpy.getLogger()
 
 ENV_MAPPING = {
     'DB_USER': 'user',
@@ -28,11 +28,14 @@ class DatabaseConfig():
 
     def __init__(self, *args, **kwargs):
         
+        logger.debug(f'DatabaseConfig kwargs: {kwargs}')
         for e in ENV_MAPPING.keys():
-            coalesced_value = kwargs[ENV_MAPPING[e]] if ENV_MAPPING[e] in kwargs else os.getenv(e)
-            if coalesced_value is not None:
-                print(f'setting {ENV_MAPPING[e]} <-- {coalesced_value}')
-                self.__setattr__(ENV_MAPPING[e], coalesced_value)
+            if ENV_MAPPING[e] in kwargs and kwargs[ENV_MAPPING[e]]:
+                self.__setattr__(ENV_MAPPING[e], kwargs[ENV_MAPPING[e]])
+                logger.info(f'mapped {e} to {ENV_MAPPING[e]} from kwargs: {kwargs[ENV_MAPPING[e]]}')
+            elif os.getenv(e):
+                self.__setattr__(ENV_MAPPING[e], os.getenv(e))
+                logger.info(f'mapped {e} to {ENV_MAPPING[e]} from env: {os.getenv(e)}')
 
         # if any([ self.__getattribute__(ENV_MAPPING[k]) is None for k in ENV_MAPPING ]):
         #     raise Exception(f'Not everything was set!')

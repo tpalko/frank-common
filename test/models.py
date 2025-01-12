@@ -1,8 +1,8 @@
 from frank.database.model import BaseModel
 from frank.database.column import StringColumn, IntColumn, JsonColumn, BoolColumn, FloatColumn
 
-class TestClass(BaseModel):
-    name = StringColumn()
+class TestieWidgets(BaseModel):
+    name = StringColumn(size=50)
     counter = IntColumn()
     data = JsonColumn()
     maybe = BoolColumn()

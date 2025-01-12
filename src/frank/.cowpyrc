@@ -6,9 +6,10 @@
             "format": "Format.DETAILED"
         }
     },
-    "root": {
-        "handlers": ["console"],
-        "level": "DEBUG",
-    },
-    "loggers": {}
+    "loggers": {
+        "database": {
+            "handlers": ["console"],
+            "level": "DEBUG"
+        },
+    }
 }

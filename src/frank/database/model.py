@@ -4,6 +4,7 @@ import cowpy
 # import gc 
 from datetime import datetime 
 
+from frank.database.meta import BaseMeta, InstanceMeta
 from frank.database.database import Database 
 from frank.database.column import Column, DateTimeColumn, ForeignKey, IdentityColumn
 from frank.database.query import Query 
@@ -18,29 +19,6 @@ logger = cowpy.getLogger()
 #     'datetime': datetime,
 #     'identity': int
 # }
-
-
-
-class BaseMeta:        
-    table = None 
-    joins = None
-    identity_col = None
-    built_in_cols = None
-    user_cols = None
-    insert_col_names = None
-    select_col_names = None
-
-    def __init__(self, *args, **kwargs):
-        for k in kwargs:
-            setattr(self, k, kwargs[k])
-
-class InstanceMeta:
-
-    identity_col = None 
-    built_in_cols = None 
-    user_cols = None 
-    built_in_col_lookup = None 
-    user_col_lookup = None 
 
 class BaseModel:
 
@@ -88,7 +66,19 @@ class BaseModel:
             select_col_names = [ 'id' ]
             select_col_names.extend(insert_col_names)
             
-            table = self.__class__.__name__.lower() + "s"
+            import re 
+
+            table = ''
+            for i, c in enumerate(self.__class__.__name__, 0):
+                if i == 0:
+                    table = c.lower()
+                    continue 
+                if re.match("[A-Z]", c):
+                    table += f'_{c.lower()}'
+                else:
+                    table += f'{c}'
+                    
+            # table = self.__class__.__name__.lower() + "s"
             alias = f'{table} {table[0]}'
 
             self.__class__._meta = BaseMeta(
@@ -216,6 +206,13 @@ class BaseModel:
     #     cls._meta.db = db 
 
     @classmethod 
+    def only(cls, **kwargs):
+        records = cls.get(**kwargs)
+        if len(records) > 1:
+            raise Exception(f'{cls} has multiple records with {kwargs}')
+        return records[0] if len(records) > 0 else None 
+    
+    @classmethod 
     def first(cls, **kwargs):
         records = cls.get(**kwargs)
         if len(records) > 0:
@@ -223,8 +220,25 @@ class BaseModel:
         return None
 
     @classmethod 
+    def init(cls):
+        cls()
+        Database.getInstance().init_table(cls._meta)
+
+    @classmethod 
     def all(cls):
         return cls.get()
+
+    @classmethod 
+    def delete_by(cls, **kwargs):
+        limit_one = True 
+        if 'limit_one' in kwargs:
+            limit_one = kwargs['limit_one']
+
+        records = cls.get(**kwargs)
+
+        if not limit_one or len(records) == 1:
+            for r in records:
+                r.delete()
 
     @classmethod 
     def join(cls, **kwargs):
@@ -233,17 +247,15 @@ class BaseModel:
     @classmethod
     def get(cls, **kwargs):
         
-        logger.debug(f'calling get() from {cls.__name__}: select cols: {cls._meta.select_col_names}, where: {kwargs}')
-        
         records = Database.getInstance()._select(cls, joins=cls._meta.joins, join_cols=False, cols=cls._meta.select_col_names, where=kwargs)        
         # records = cls._meta.db._select(table_name, where=kwargs)
         
         # logger.debug(records)
         
-        for r in records:
-            for field in r:
-                if type(r[field]) == datetime:
-                    r[field] = datetime.strftime(r[field], "%Y-%m-%d %H:%M:%S")        
+        # for r in records:
+        #     for field in r:
+        #         if type(r[field]) == datetime:
+        #             r[field] = datetime.strftime(r[field], "%Y-%m-%d %H:%M:%S")
         # logger.debug(records)
         typed_records = [ cls(**r) for r in records ]
         return typed_records 
@@ -268,10 +280,26 @@ class BaseModel:
         
         return user_col_vals
 
+    @classmethod 
+    def upsert_only(cls, **kwargs):
+
+        on_fields = {}
+        for k in kwargs:
+            if k.find('on__') == 0:
+                on_fields[k[4:]] = kwargs[k]
+        for field in on_fields.keys():
+            del kwargs[f'on__{field}']
+        
+        dbrecords = Database.getInstance()._select(cls, where=on_fields)
+        if len(dbrecords) == 1:
+            dbrecords[0].set(**kwargs)
+            dbrecords[0].upsert()
+
     def upsert(self, **kwargs):
 
         upsert_on = {}
         if 'on' in kwargs:
+            # -- on='name', on='name,date', on=['name', 'date']
             on_fields = kwargs['on']
             if type(on_fields) == str:
                 on_fields = on_fields.split(',')
@@ -286,7 +314,7 @@ class BaseModel:
         if self._id_col_val is not None and 'id' not in upsert_on:
             upsert_on['id'] = self._id_col_val
 
-        logger.debug(f'upsert kwargs {upsert_on}')
+        # logger.debug(f'upsert kwargs {upsert_on}')
         dbrecords = []        
         
         # if presented with any query, we look for a singular database record to update
@@ -297,7 +325,7 @@ class BaseModel:
         if len(dbrecords) == 1:
             logger.debug(f'db record found: {dbrecords}')
             vals = self.val_dict(operation='update')
-            logger.debug(f'updating db record with {vals}')
+            logger.info(f'updating db record with {vals}')
             dbrecords[0].update(vals)
             id_match = self._id_col_val or dbrecords[0]['id']
             Database.getInstance()._update(self.__class__, set=dbrecords[0], where={'id':id_match})
@@ -317,7 +345,18 @@ class BaseModel:
                 self._instancemeta.built_in_col_lookup[builtin['name']]['col'].set_val(vals[builtin['name']])
         else:
             raise Exception(f'upserting {self.__class__.__name__} with {kwargs} matched {len(dbrecords)} records')
-        
+    
+    def set(self, **kwargs):
+        for k in kwargs:
+            if hasattr(self, k):
+                setattr(self, k, kwargs[k])
+                
+    def delete(self):
+        Database.getInstance()._delete(
+            table=self.__class__,
+            id=self._instancemeta.identity_col['col'].val
+        )
+
     def save(self):
         upsert_kwargs = {}
         if self._instancemeta.identity_col['col'].val is not None:

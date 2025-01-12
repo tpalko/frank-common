@@ -5,8 +5,11 @@ import cowpy
 from enum import Enum
 from contextlib import contextmanager
 from datetime import datetime 
+from mariadb import ProgrammingError 
+
+from frank.database.meta import BaseMeta, InstanceMeta
 from frank.database.config import DatabaseConfig, DbType
-from frank.database.dialect import db_dialect_mappings, get_db_connection
+from frank.database.dialect import Dialect, db_dialect_mappings, get_db_connection, TYPE_MAPPINGS
 
 logger = cowpy.getLogger()
 
@@ -34,9 +37,9 @@ class Database(object):
     __instance = None 
 
     @staticmethod
-    def createInstance(**kwargs):
+    def createInstance(config: DatabaseConfig):
         '''Triggers the creation of the Database singleton. **Uses environment variables but accepts kwargs to override'''
-        Database(**kwargs)
+        Database(config)
 
     @staticmethod
     def getInstance():
@@ -56,12 +59,15 @@ class Database(object):
         # if not valid:
         #     raise Exception(f'Please provide required keys: {required_keys}')
         
-        self.cfg = DatabaseConfig(**kwargs['config'] if 'config' in kwargs else {})
-        self.models = kwargs['models'] if 'models' in kwargs else []
+        if 'config' in kwargs:
+            self.cfg = kwargs['config']
+            if not isinstance(self.cfg, DatabaseConfig):
+                raise Exception("Provided config is not DatabaseConfig")
+        else:
+            self.cfg = DatabaseConfig()
 
-        if not isinstance(self.cfg, DatabaseConfig):
-            raise Exception("Provided config is not DatabaseConfig")
-        
+        # self.models = kwargs['models'] if 'models' in kwargs else []
+
         # print(f'models: {self.models}')
         # print(self.models[0].__name__)
         # print(f'{self.models[0]._meta}')
@@ -73,12 +79,12 @@ class Database(object):
         # -- _so that_ BaseModel instances don't have to have a Database instance to pass into each .get() or .save()
         # -- the BaseModel already has it.. but Database is also being made aware of the BaseModels in this lookup 
         # -- table, which is useful for select/insert col lookups per table
-        self.models_by_table_name = { m.__name__.lower() + "s": m for m in self.models }
+        # self.models_by_table_name = { m.__name__.lower() + "s": m for m in self.models }
         
         # print(f'models by table name: {self.models_by_table_name}')
         
-        self.table_names = [ m._meta.table for m in self.models ]
-        self.insert_cols = { m._meta.table: m._meta.insert_cols for m in self.models }   
+        # self.table_names = [ m._meta.table for m in self.models ]
+        # self.insert_cols = { m._meta.table: m._meta.insert_cols for m in self.models }   
              
         # self.insert_cols = { m: [ c['name'] for c in self.tables['models'][m] ] for m in self.tables['models'].keys() }
 
@@ -100,9 +106,9 @@ class Database(object):
         #             except:
         #                 logger.exception()
                 
-        for model in self.models:
-            logger.debug(f'registering {model.__name__}')
-            model.register_db(self)
+        # for model in self.models:
+        #     logger.debug(f'registering {model.__name__}')
+        #     model.register_db(self)
 
         Database.__instance = self 
 
@@ -124,10 +130,15 @@ class Database(object):
             if column_name[-3:] == '_at' or column_name[-10:] == '_timestamp':
                 parsed = value 
                 if type(parsed) != datetime:
-                    try:
-                        parsed = datetime.strptime(value, "%Y-%m-%d %H:%M:%S.%f")
-                    except:
-                        parsed = datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
+                    attempt_formats = [
+                        "%Y-%m-%d %H:%M:%S.%f",
+                        "%Y-%m-%d %H:%M:%S"
+                    ]
+                    for af in attempt_formats:
+                        try:
+                            parsed = datetime.strptime(value, af)
+                        except:
+                            logger.warning(f'failed to parse {value} as {af}')
                 return parsed
             elif column_name[0:3] == 'is_':
                 return bool(value)
@@ -137,10 +148,10 @@ class Database(object):
         return { col[0]: self.parse_type(col[0], row[idx]) for idx,col in enumerate(cursor.description) }
     
     def _column_type(self, col):
-        colType = TYPE_MAPPINGS[col["type"]](self.cfg)
+        colType = TYPE_MAPPINGS[col["type"].col_type](self.cfg)
         size = ''
-        if 'size' in col:
-            size = f'({col["size"]})'
+        if 'size' in col['kwargs']:
+            size = f'({col["kwargs"]["size"]})'
         elif col["type"] == str:
             colType = 'text'
         return f'{colType}{size}'
@@ -148,8 +159,12 @@ class Database(object):
     def _column_def(self, col):
         return f'{col["name"]} {self._column_type(col)}{" null" if "null" in col and col["null"] == True else ""}'
     
-    def create_table(self, tablename):
-        return f'({self.tables["base"]["primary_key"]} {db_dialect_mappings[self.cfg.dbType][Dialect.INTEGER]} PRIMARY KEY {db_dialect_mappings[self.cfg.dbType][Dialect.AUTO_INCREMENT]}, {", ".join([ self._column_def(col) for col in self.tables["models"][tablename] ])}{"," if len(self.tables["base"]["timestamps"]) > 0 else ""}{", ".join([ t + " datetime" for t in self.tables["base"]["timestamps"] ]) if len(self.tables["base"]["timestamps"]) > 0 else ""})'
+    def create_table(self, table_meta):
+        return f'({table_meta.identity_col["name"]} \
+            {db_dialect_mappings[self.cfg.dbType][Dialect.INTEGER]} PRIMARY KEY \
+            {db_dialect_mappings[self.cfg.dbType][Dialect.AUTO_INCREMENT]}, \
+            {", ".join([ self._column_def(col) for col in table_meta.user_cols ])}, \
+            {", ".join([ self._column_def(col) for col in table_meta.built_in_cols ])})'
     
     @contextmanager
     def get_cursor(self):
@@ -175,7 +190,7 @@ class Database(object):
         except:          
             # -- but if anything else goes wrong, kick
             logger.exception()  
-            raise
+            # raise
         finally:
             self.conn.commit()
             self.conn.close()
@@ -187,57 +202,62 @@ class Database(object):
         self.conn.row_factory = self.dict_factory
         
         with self.get_cursor() as c:
-            try:
-                yield c 
-            except:
-                # -- wrap all errors simply for backup callers
-                logger.exception()
-                raise BcktDatabaseException(sys.exc_info()[1])            
+            yield c 
     
-    def init_db(self):
-        '''Checks database table schema against table schema definition, creating missing tables'''        
+    def init_table(self, table_meta: BaseMeta):
 
-        for table in self.table_names:
-            
-            create_table_cmd = f'CREATE TABLE {table} {self.create_table(table)} {db_dialect_mappings[self.cfg.dbType][Dialect.ENGINE]}' 
-            # f'CREATE TABLE "{table}" {TABLES[table](self.config)}'
+        create_table_cmd = f'CREATE TABLE {table_meta.table} {self.create_table(table_meta)} {db_dialect_mappings[self.cfg.dbType][Dialect.ENGINE]}' 
+        # f'CREATE TABLE "{table}" {TABLES[table](self.config)}'
 
+        sql = None 
+        # -- schemachecker 
+        with self.cursor() as c:
+            get_create_table_sql = db_dialect_mappings[self.cfg.dbType][Dialect.GET_CREATE_TABLE]
+            logger.debug(f'executing {get_create_table_sql} {table_meta.table}')
             try:
-                sql = None 
-                # -- schemachecker 
-                with self.cursor() as c:
-                    get_create_table_sql = DIALECT_MAPPINGS[Dialect.GET_CREATE_TABLE](self.cfg)
-                    logger.debug(f'executing {get_create_table_sql} {table}')
-                    c.execute(f'{get_create_table_sql} {table}')
-                    # c.execute(f'select sql from sqlite_master where name = ?', (table,))
-                    firstrow = c.fetchone()
-                    if not firstrow:
-                        # sqlite3.OperationalError
-                        raise Exception("fetchone returned nothing")
-                    sql = firstrow[1]
-                if sql:
-                    logger.success(f'Captured {table} schema: {sql}')
+                c.execute(f'{get_create_table_sql} {table_meta.table}')
+                # c.execute(f'select sql from sqlite_master where name = ?', (table,))
+                firstrow = c.fetchone()
+                if not firstrow or len(firstrow) == 0 or not firstrow[1]:
+                    # sqlite3.OperationalError
+                    raise Exception("fetchone returned nothing")
 
-                    sql = " ".join([ s.strip() for s in sql.split(' ') if s.strip() != '' ]).replace('\'', '').replace('`', '').replace('"', '').replace('  ', ' ').lower()
-                    create_table_cmd = " ".join([ s.strip() for s in create_table_cmd.split(' ') if s.strip() != '' ]).replace('\'', '').replace('"', '').replace('  ', ' ').lower()
+                sql = firstrow[1]                
+                logger.debug(f'captured {table_meta.table} schema: {sql}')
 
-                    if sql != create_table_cmd:
-                        logger.warning(f'WARNING: {table} schema in database does not match schema in code')
-                        logger.warning(f'Database:\t{sql}')
-                        logger.warning(f'Code:\t\t{create_table_cmd}')
-                    else:
-                        logger.success(f'Table schema OK')
-                # -sqlite3.OperationalError, mariadb.ProgrammingError
-            except (BcktDatabaseException) as oe:
-                logger.error(f'Failed to read from table {table}')
-                logger.error(oe)
-                logger.warning(f'Creating table {table}..')
-                with self.cursor() as c:                    
-                    c.execute(create_table_cmd)
-            except:
-                logger.error(f'Something else failed testing table {table}')
-                logger.exception()
-                raise 
+                sql = " ".join([ s.strip() for s in sql.split(' ') if s.strip() != '' ]).replace('\'', '').replace('`', '').replace('"', '').replace('  ', ' ').lower()
+                create_table_cmd = " ".join([ s.strip() for s in create_table_cmd.split(' ') if s.strip() != '' ]).replace('\'', '').replace('"', '').replace('  ', ' ').lower()
+
+                if sql != create_table_cmd:
+                    logger.warning(f'WARNING: {table_meta.table} schema in database does not match schema in code\nDatabase:\t{sql}\nCode:\t{create_table_cmd}')
+                else:
+                    logger.success(f'Table schema OK')
+            except (Exception, ProgrammingError) as pe:
+                logger.debug(f'show table create fail! now executing create: {create_table_cmd}')
+                c.execute(create_table_cmd)
+
+        # -sqlite3.OperationalError, mariadb.ProgrammingError
+
+    # def init_db(self):
+    #     '''Checks database table schema against table schema definition, creating missing tables'''        
+
+    #     logger.debug(f'Creating {self.table_names}')
+        
+    #     for table in self.table_names:
+            
+    #         try:
+    #             self.init_table(table)
+                
+    #         except (BcktDatabaseException) as oe:
+    #             logger.error(f'Failed to read from table {table}')
+    #             logger.error(oe)
+    #             logger.warning(f'Creating table {table}..')
+    #             with self.cursor() as c:                    
+    #                 c.execute(create_table_cmd)
+    #         except:
+    #             logger.error(f'Something else failed testing table {table}')
+    #             logger.exception()
+    #             raise 
 
     ### ORIGINAL 
     # @contextmanager
@@ -264,8 +284,8 @@ class Database(object):
     
     def _table_join(self, join_table, home_table):
 
-        print(join_table)
-        print(home_table)
+        logger.debug(join_table)
+        logger.debug(home_table)
         
         if home_table in self.tables['foreign_keys'] and join_table in self.tables['foreign_keys'][home_table]:
             return f'inner join {self._table_alias(join_table)} on {join_table[0]}.{self.tables["foreign_keys"][home_table][join_table]} = {home_table[0]}.{join_table[0:-1]}_{self.tables["foreign_keys"][home_table][join_table]}'
@@ -274,7 +294,7 @@ class Database(object):
         else:
             raise ValueError(f'cannot render join syntax between {join_table} and {home_table} - foreign key configuration does not associate the two')
     
-    def _parse_param_to_stmt(self, param):
+    def _parse_param_to_stmt(self, param, val):
         op = "="
 
         if param[-4:] == "__gt":
@@ -292,6 +312,10 @@ class Database(object):
         elif param[-7:] == "__ilike":
             op = "like"
             param = param[0:-7]
+        elif param[-8:] == "__isnull":
+            op ="is null" if val else "is not null"
+            param = param[0:-8]
+
 
         return f'{param} {op} ?'
 
@@ -319,7 +343,7 @@ class Database(object):
     def _select(self, table, cols=None, joins=[], join_cols=False, where={}, order_by=None):
 
         if not cols:
-            cols = table._meta.select_cols
+            cols = table._meta.select_col_names
             # cols = self.models_by_table_name[table]._meta.select_cols
 
         if join_cols:
@@ -329,18 +353,17 @@ class Database(object):
         response = _response()
 
         try:
-            logger.debug(f'selecting from {table} {cols} where {where}')
             params = ()
             where_stmt = ''
             if len(where.keys()) > 0:
-                where_stmt = 'where ' + ' and '.join([ self._parse_param_to_stmt(w) for w in where.keys() ])
+                where_stmt = 'where ' + ' and '.join([ self._parse_param_to_stmt(w, where[w]) for w in where.keys() ])
                 params = tuple([ str(where[w]) for w in where ])
             query = f'select {",".join(cols)} from {table._meta.alias} {" ".join([ self._table_join(join, table) for join in joins ])} {where_stmt} '
             if order_by:
                 query = f'{query} order by {order_by}'
 
+            logger.info(query)
             with self.cursor() as cur:
-                logger.debug(f'query: {query} params: {params}, types: {",".join([ type(p).__name__ for p in params ])}')
                 cur.execute(query, params)
                 all_records = cur.fetchall()
                 if self.cfg.dbType == DbType.MariaDB:                    
@@ -365,13 +388,12 @@ class Database(object):
         response = _response()
 
         try:
-            logger.debug(f'updating {table} {set} {where}')
             query = f'update {table._meta.alias} \
                 set {",".join([ k + " = ? " for k in set.keys() ])} \
                 where {" AND ".join([ k + " = ? " if where[k] else k + " is null " for k in where.keys() ])};'
+            logger.info(query)
             where = { k: where[k] for k in where.keys() if where[k] }
             with self.cursor() as cur:
-                logger.debug(f'{query} {set} {where}')
                 cur.execute(query, tuple(set.values()) + tuple(where.values()))
             response['success'] = True 
         except:
@@ -389,8 +411,8 @@ class Database(object):
         response = _response()
 
         try:
-            logger.debug(f'deleting {table} {id}')
-            query = f'delete from {table} where id = ?'
+            query = f'delete from {table._meta.table} where id = ?'
+            logger.info(query)
             with self.cursor() as cur:
                 cur.execute(query, (id,))            
             response['success'] = True 
@@ -435,10 +457,9 @@ class Database(object):
         response = _response()
 
         try:
-            logger.debug(f'inserting {table} {insert_params}')
             # query = f'insert into {table} ({",".join(self.models_by_table_name[table]._meta.insert_cols)}) values({",".join([ "?" for p in self.models_by_table_name[table]._meta.insert_cols ])})'
             query = f'insert into {table} ({",".join(cols)}) values({",".join([ "?" for p in cols ])})'
-            logger.debug(query)
+            logger.info(query)
             logger.debug(insert_params)
             with self.cursor() as cur:
                 cur.execute(query, insert_params)    

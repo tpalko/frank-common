@@ -3,12 +3,18 @@ from datetime import datetime
 import sqlite3 
 import mariadb
 from enum import Enum
-from frank.database.config import DbType
+
+class DbType(Enum):
+    MariaDB = 0
+    Sqlite = 1
 
 db_providers = {
     DbType.Sqlite: lambda config: sqlite3.connect(config.filename),
     DbType.MariaDB: lambda config: mariadb.connect(host=config.host, user=config.user, password=config.password, database=config.name)
 }
+
+class text(str):
+    pass 
 
 class Dialect(Enum):
     AUTO_INCREMENT = 0
@@ -18,10 +24,11 @@ class Dialect(Enum):
     GET_CREATE_TABLE = 4
     INTEGER = 5
     JSON_TYPE = 6
+    TEXT = 7
 
-DIALECT_MAPPINGS = {
-    Dialect.GET_CREATE_TABLE: lambda config: db_dialect_mappings[config.dbType][Dialect.GET_CREATE_TABLE]
-}
+# DIALECT_MAPPINGS = {
+#     Dialect.GET_CREATE_TABLE: lambda config: db_dialect_mappings[config.dbType][Dialect.GET_CREATE_TABLE]
+# }
 
 def get_db_connection(config):
     return db_providers[config.dbType](config)
@@ -41,8 +48,9 @@ db_dialect_mappings = {
         Dialect.ENGINE: 'engine=innodb default charset=utf8',
         Dialect.FLOAT: 'decimal',
         Dialect.CHAR: 'varchar',
+        Dialect.TEXT: 'text',
         Dialect.GET_CREATE_TABLE: 'show create table',
-        Dialect.INTEGER: 'int(11)',
+        Dialect.INTEGER: 'int',
         Dialect.JSON_TYPE: 'json'
     }
 }
@@ -50,6 +58,7 @@ db_dialect_mappings = {
 # -- as of this writing (march 2024), TYPE_MAPPINGS is only referenced when calling create_table
 TYPE_MAPPINGS = {
     str: lambda config: db_dialect_mappings[config.dbType][Dialect.CHAR],
+    text: lambda config: db_dialect_mappings[config.dbType][Dialect.TEXT],
     int: lambda config: db_dialect_mappings[config.dbType][Dialect.INTEGER],
     datetime.date: lambda config: 'datetime',
     bool: lambda config: 'bool', # tinyint(1)',

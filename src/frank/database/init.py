@@ -1,35 +1,55 @@
 import os 
-import sys 
+import cowpy 
 from frank.database.database import Database 
 from frank.database.model import BaseModel
+from frank.database.config import DatabaseConfig
 from importlib import import_module
+
+logger = cowpy.getLogger()
 
 def setup():
         
-    # print(sys.path)
+    # logger.debug(sys.path)
 
-    settings_module_name = os.getenv('FRANKDB_SETTINGS')
-    settings = None 
+    # settings_module_name = os.getenv('FRANKDB_SETTINGS')
+    # settings = None 
 
-    if settings_module_name:
-        settings = import_module(settings_module_name)
+    # if settings_module_name:
+    #     settings = import_module(settings_module_name)
 
-    frankdb_models_module = settings.FRANKDB_MODELS
+    # frankdb_models_module = settings.FRANKDB_MODELS
 
-    print(f'Loading models: {frankdb_models_module}')
-    t = import_module(frankdb_models_module)
+    models_module_name = os.getenv('FRANKDB_MODELS')
+    logger.info(f'Loading models: {models_module_name}')
+    t = import_module(models_module_name)
 
-    # print(t)
-    # print(dir(t))
+    # logger.debug(t)
+    # logger.debug(dir(t))
 
     for d in dir(t):
         sub = t.__getattribute__(d)
-        # print(f'Testing attribute {sub}')    
+        # logger.debug(f'Testing attribute {sub}')    
         is_sub = type(sub) == type and issubclass(sub, BaseModel) and sub != BaseModel
         if is_sub:        
-            print(f'Init: {sub}')
-            sub()
+            logger.info(f'Init: {sub}')
+            sub.init()
 
-    print(f'Loading database config: {settings.DB_CONFIG}')
-    if settings:
-        Database.createInstance(**{'config': settings.DB_CONFIG})
+    ## - DATABASE CONFIG 
+
+    DB_PARAMS = [
+        'DB_USER',
+        'DB_HOST',
+        'DB_DATABASE',
+        'DB_PASSWORD',
+        'DB_TYPE'
+    ]
+    params = { p: os.getenv(p.upper()) for p in DB_PARAMS }
+    
+    if not all(params.values()):
+        raise EnvironmentError(f'Not all db values were provided: {params}')
+    
+    logger.debug(f'Loading database config: {params}')
+    config = DatabaseConfig(**params)
+    Database.createInstance(config)
+
+    return True 
